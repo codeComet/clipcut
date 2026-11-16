@@ -33,8 +33,11 @@ them in `.env`, see `.env.example`). The redirect address to register is shown i
 
 - **YouTube** (Google Cloud): an OAuth client of type Web application, with YouTube Data API v3 turned on. Until
   Google verifies the app, people see a warning screen and uploads stay private.
-- **Instagram** (Meta for Developers): a Business app with Instagram (API setup with Instagram login). Works with
-  Creator and Business accounts. Until Meta reviews the app, only accounts added as testers can connect. Instagram
+- **Instagram** (Meta for Developers): a Business app with the Instagram API use case and Facebook Login for
+  Business. Create a login configuration with the Instagram permissions (`instagram_basic`,
+  `instagram_content_publish`, `pages_show_list`), add the redirect address under Valid OAuth redirect URIs, and
+  paste the App ID, App secret and configuration ID. Works with Business and Creator accounts linked to a Facebook
+  Page. Until Meta reviews the app, only people with a role on it can connect. Instagram
   fetches each clip from a one-hour signed link on your site, so the site needs a public https address.
 - **TikTok** (TikTok for Developers): an app with Login Kit and the Content Posting API (Direct Post), scopes
   `user.info.basic` and `video.publish`. Until TikTok audits the app, clips are posted as private (ClipCut does

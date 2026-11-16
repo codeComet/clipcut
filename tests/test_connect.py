@@ -60,14 +60,11 @@ class R:
             raise ValueError
         return self._d
 calls, uploads, tt = [], [], {"audited": False, "status": 0}
+FB, fbs = accounts.FB, {"no_pages": False}
 def post(url, data=None, json=None, headers=None, params=None, timeout=None, content=None):
     calls.append(("POST", url, data or json, headers or {}))
     if url == "https://oauth2.googleapis.com/token":
         return R(200, {"access_token": "yt-access", "refresh_token": "yt-refresh", "expires_in": 3600})
-    if url == "https://api.instagram.com/oauth/access_token":
-        if data["code"] != "igcode":
-            return R(400, {"error_message": "bad code"})
-        return R(200, {"data": [{"access_token": "ig-short", "user_id": "17841", "permissions": "instagram_business_basic,instagram_business_content_publish"}]})
     if url.endswith("/oauth/token/"):
         if data.get("grant_type") == "refresh_token":
             return R(200, {"access_token": "tt-access-2", "refresh_token": "tt-refresh-2", "expires_in": 7200, "open_id": "oid", "scope": "user.info.basic,video.publish"})
@@ -95,10 +92,24 @@ def get(url, params=None, headers=None, timeout=None):
     calls.append(("GET", url, params, headers or {}))
     if url.endswith("/youtube/v3/channels"):
         return R(200, {"items": [{"id": "UC123", "snippet": {"title": "My Channel"}}]})
-    if url == "https://graph.instagram.com/access_token":
-        return R(200, {"access_token": "ig-long", "token_type": "bearer", "expires_in": 5183944})
-    if url == "https://graph.instagram.com/me":
-        return R(200, {"user_id": "17841", "username": "clipper", "account_type": "MEDIA_CREATOR"})
+    if url == FB + "/oauth/access_token":
+        if params.get("grant_type") == "fb_exchange_token":
+            return R(200, {"access_token": "fb-long", "token_type": "bearer", "expires_in": 5183944})
+        if params["code"] != "igcode" or params["client_secret"] != "instagram-secret-value":
+            return R(400, {"error": {"message": "bad code"}})
+        return R(200, {"access_token": "fb-short", "token_type": "bearer"})
+    if url == FB + "/me/accounts":
+        if fbs["no_pages"]:
+            return R(400, {"error": {"message": "(#100) Tried accessing nonexisting field (accounts)"}})
+        return R(200, {"data": [{"access_token": "page-token", "instagram_business_account": {"id": "17841"}},
+                                {"access_token": "page-2", "id": "no-instagram-here"}]})
+    if url == FB + "/debug_token":
+        return R(200, {"data": {"scopes": ["instagram_basic", "instagram_content_publish"], "granular_scopes": [
+            {"scope": "instagram_content_publish", "target_ids": ["17999"]}]}})
+    if url == FB + "/17841":
+        return R(200, {"username": "clipper"})
+    if url == FB + "/17999":
+        return R(200, {"username": "secondclips"})
     if url.endswith("/container1"):
         return R(200, {"status_code": "FINISHED"})
     if url.endswith("/media1"):
@@ -122,9 +133,28 @@ check("YouTube: Google's page, asking to upload", (loc.netloc, "youtube.upload" 
 check("YouTube: back on Connected apps, connected", (back.status_code, back.headers["location"].startswith("/app/settings/apps?connected=youtube")), (303, True))
 loc, back = connect(b, "instagram", "igcode#_")
 q = parse_qs(loc.query)
-check("Instagram: Instagram's own page, with publishing permission", (loc.netloc, q["client_id"][0], "instagram_business_content_publish" in q["scope"][0]),
-      ("www.instagram.com", "1234567890", True))
-check("Instagram: connected, with the #_ Instagram adds to the code removed", "connected=instagram" in back.headers["location"])
+check("Instagram, no configuration saved: Facebook's login, asking to publish", (loc.netloc, q["client_id"][0], "instagram_content_publish" in q["scope"][0]),
+      ("www.facebook.com", "1234567890", True))
+check("Instagram: connected, with the #_ added to the code removed", "connected=instagram" in back.headers["location"])
+check("a configuration ID that is not one is refused",
+      a.put("/api/apps", json={"platform": "instagram", "client_id": "", "client_secret": "", "config_id": "abc"}, headers=ORIGIN).status_code, 400)
+r = a.put("/api/apps", json={"platform": "instagram", "client_id": "", "client_secret": "", "config_id": "2182464959058717"}, headers=ORIGIN)
+check("the configuration ID alone can be saved, keeping the app", (r.status_code, r.json()["instagram"]["config_id"], accounts.app_keys("instagram")),
+      (200, "2182464959058717", ("1234567890", "instagram-secret-value")))
+loc, back = connect(b, "instagram", "igcode")
+q = parse_qs(loc.query)
+check("Instagram, with a configuration: Login for Business, the permissions come from it",
+      (q["config_id"][0], q["override_default_response_type"][0], "scope" in q), ("2182464959058717", "true", False))
+with ctx.as_user(user.id):
+    check("the Instagram account linked to the Page posts with the Page's token, through Facebook",
+          (accounts.get("ig_17841")["token"], accounts.get("ig_17841")["api"]), ("page-token", FB))
+fbs["no_pages"] = True
+loc, back = connect(b, "instagram", "igcode")
+fbs["no_pages"] = False
+with ctx.as_user(user.id):
+    check("an account granted directly (no Page listed) is found from the sign-in itself",
+          (accounts.get("ig_17999") or {}).get("name"), "@secondclips")
+    accounts.remove("ig_17999")
 loc, back = connect(b, "tiktok")
 q = parse_qs(loc.query)
 check("TikTok: TikTok's own page, asking to post", (loc.netloc, q["client_key"][0], q["scope"][0]), ("www.tiktok.com", "awtiktokkey123", "user.info.basic,video.publish"))
@@ -132,7 +162,7 @@ check("TikTok: connected", "connected=tiktok" in back.headers["location"])
 accs = {x["platform"]: x for x in b.get("/api/accounts").json()}
 check("all three accounts are listed with their names", (accs["youtube"]["name"], accs["instagram"]["name"], accs["tiktok"]["name"]),
       ("My Channel", "@clipper", "@streamerclips"))
-check("tokens never reach the page", any(t in b.get("/api/accounts").text for t in ("ig-long", "tt-access", "yt-refresh")), False)
+check("tokens never reach the page", any(t in b.get("/api/accounts").text for t in ("page-token", "fb-long", "tt-access", "yt-refresh")), False)
 check("someone else's accounts are not mine", a.get("/api/accounts").json(), [])
 r = b.get("/oauth/tiktok/callback", params={"code": "x", "state": "made-up"})
 check("a made-up return is refused", "connect_error" in r.headers["location"])
@@ -171,6 +201,7 @@ with ctx.as_user(user.id):
     rid, url = accounts.instagram_upload(ig, jd / "clip01.mp4", "My caption", "job-12345678")
     made = next(c for c in calls if c[1].endswith("/17841/media"))
     check("Instagram: a Reel from the signed link", (made[2]["media_type"], made[2]["video_url"].startswith(BASE + "/pub/")), ("REELS", True))
+    check("Instagram: posted through Facebook, with the Page's token", (made[1].startswith(FB + "/"), made[3]["Authorization"]), (True, "Bearer page-token"))
     check("Instagram: published, with its link", (rid, url), ("media1", "https://www.instagram.com/reel/abc/"))
 
     uploads.clear(); tt.update(audited=False, status=0)
