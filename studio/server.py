@@ -699,7 +699,8 @@ def link_preview(request: Request, url: str = ""):
         raise HTTPException(422, str(e))
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:  # noqa: BLE001
+        print(f"  Link preview failed for {url}: {safe.friendly(e, 800)}", flush=True)   # the real reason, for the server log
         raise HTTPException(422, "Couldn't open that video. Check the link is public and complete.")
 
 
