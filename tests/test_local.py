@@ -118,6 +118,25 @@ put({"provider": "gemini", "models": "g-fast", "key": "wrong-key-000000000000"})
 r = post("/api/ai/test")
 check("a failed test says why, without the key", (r.status_code, "wrong-key-000000000000" in r.text), (502, False))
 
+# ---- YouTube cookies, pasted on the settings page
+COOKIE = "secret-cookie-value-123"
+yc = lambda body: c.put("/api/youtube-cookies", json=body, headers=ORIGIN)  # noqa: E731
+check("no cookies to begin with", c.get("/api/youtube-cookies").json()["saved"], False)
+check("text that is not cookies.txt is refused", yc({"text": "hello there"}).status_code, 400)
+check("cookies for other sites only are refused", yc({"text": ".example.com\tTRUE\t/\tTRUE\t0\tSID\tabc"}).status_code, 400)
+check("saving from another website is refused", c.put("/api/youtube-cookies", json={"text": "x"}, headers={"Origin": "https://evil.example"}).status_code, 403)
+from studio import media  # noqa: E402
+media._yt_refused_until = 9e12                     # as if YouTube had just refused this server
+pasted = "# Netscape HTTP Cookie File\n#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t0\tSID\t" + COOKIE + "\n.youtube.com    TRUE    /    FALSE    0    PREF    a b"
+r = yc({"text": pasted})
+check("cookies are saved, and YouTube is tried again at once", (r.status_code, r.json()["saved"], media.youtube_paused()), (200, True, False))
+saved = config.YTDLP_COOKIES.read_text()
+check("an HttpOnly cookie is kept, and spaces from pasting become tabs",
+      ("#HttpOnly_.youtube.com\tTRUE" in saved, ".youtube.com\tTRUE\t/\tFALSE\t0\tPREF\ta b" in saved), (True, True))
+check("yt-dlp is given them", config.ytdlp_opts().get("cookiefile"), str(config.YTDLP_COOKIES))
+check("the cookies are never sent back", COOKIE in c.get("/api/youtube-cookies").text or COOKIE in c.get("/api/status").text, False)
+check("they can be removed", (c.delete("/api/youtube-cookies", headers=ORIGIN).json()["saved"], config.YTDLP_COOKIES.exists()), (False, False))
+
 print("ALL PASSED" if not fails else f"{len(fails)} failed")
 import shutil  # noqa: E402
 db.engine.dispose()

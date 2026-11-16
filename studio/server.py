@@ -1296,6 +1296,31 @@ def ai_test(request: Request):
         raise HTTPException(502, ai.explain(e) or "The AI did not answer: " + _ai_error(e))
 
 
+# ---------------------------------------------------------------- YouTube cookies, for servers YouTube refuses
+# Admin (or owner) only, like the AI key. The cookies are never sent back to the page.
+@app.get("/api/youtube-cookies")
+def yt_cookies_get(request: Request):
+    _admin(request)
+    return media.youtube_cookies()
+
+
+@app.put("/api/youtube-cookies")
+def yt_cookies_put(request: Request, body: dict = Body(...)):
+    _admin(request)
+    if not isinstance(body.get("text"), str):
+        raise HTTPException(400, "Paste the cookies first.")
+    try:
+        return media.save_youtube_cookies(body["text"])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/youtube-cookies")
+def yt_cookies_delete(request: Request):
+    _admin(request)
+    return media.remove_youtube_cookies()
+
+
 # ================================================================ posting, accounts, settings
 @app.get("/api/overview")
 def overview():

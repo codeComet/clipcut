@@ -53,6 +53,42 @@ def note_refusal(url: str, err) -> bool:
     return False
 
 
+def youtube_cookies() -> dict:
+    """Whether YouTube cookies are saved (never what they are)."""
+    f = config.YTDLP_COOKIES
+    return {"saved": f.is_file(), "saved_at": int(f.stat().st_mtime) if f.is_file() else None,
+            "paused": youtube_paused()}
+
+
+def save_youtube_cookies(text: str) -> dict:
+    """Keep a pasted cookies.txt (Netscape format) for yt-dlp. Used from the very next YouTube link."""
+    global _yt_refused_until
+    rows = []
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if not line or (line.startswith("#") and not line.startswith("#HttpOnly_")):
+            continue
+        # pasting sometimes turns the tabs into spaces; the value is the last field, so it may keep its spaces
+        parts = line.split("\t") if "\t" in line else line.split(None, 6)
+        if len(parts) != 7:
+            raise ValueError("That doesn't look like a cookies.txt file. Export the cookies in Netscape (cookies.txt) format.")
+        rows.append("\t".join(p.strip() for p in parts))
+    if not any("youtube.com" in r.split("\t")[0] for r in rows):
+        raise ValueError("There are no YouTube cookies in that. Export them while youtube.com is open and you are signed in.")
+    f = config.YTDLP_COOKIES
+    tmp = f.with_name(f.name + ".tmp")
+    tmp.write_text("# Netscape HTTP Cookie File\n" + "\n".join(rows) + "\n", encoding="utf-8")
+    tmp.chmod(0o600)
+    tmp.replace(f)
+    _yt_refused_until = 0.0          # try YouTube again straight away with the new cookies
+    return youtube_cookies()
+
+
+def remove_youtube_cookies() -> dict:
+    config.YTDLP_COOKIES.unlink(missing_ok=True)
+    return youtube_cookies()
+
+
 @contextlib.contextmanager
 def _youtube_guard(url):
     check_youtube(url)

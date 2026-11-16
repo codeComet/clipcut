@@ -46,6 +46,9 @@ for who, c in (("anon", anon), ("user", a)):
     for path in ("/admin", "/admin/users", "/api/admin/overview", f"/api/admin/users/{ub['id']}"):
         check(f"{who} GET {path} -> 404", c.get(path).status_code, 404)
     check(f"{who} disable -> 404", c.post(f"/api/admin/users/{ub['id']}/disabled", json={"disabled": True}, headers=ORIGIN).status_code, 404)
+    check(f"{who} cannot read, save or remove the YouTube cookies",
+          [c.get("/api/youtube-cookies").status_code, c.put("/api/youtube-cookies", json={"text": "x"}, headers=ORIGIN).status_code,
+           c.delete("/api/youtube-cookies", headers=ORIGIN).status_code], lambda r: all(x in (401, 404) for x in r))
 check("anon /app -> login", anon.get("/app").status_code, 303)
 check("anon /api/status -> 401", anon.get("/api/status").status_code, 401)
 

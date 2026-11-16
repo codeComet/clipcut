@@ -2026,6 +2026,11 @@ async function drawSettings() {
           </div>
           <div class="row" style="margin-top:20px"><button class="btn primary" data-act="aisave">Save and test</button>${k.ready ? `<button class="btn" data-act="aitest">Test again</button>` : ""}</div></section>`;
       aiHints();
+      const yc = await api("/api/youtube-cookies");
+      body.insertAdjacentHTML("beforeend", `<section class="set-sec"><h2>YouTube access</h2><p class="help">YouTube often refuses to let servers download videos ("confirm you're not a bot"). Cookies from a signed-in YouTube account get past it. Use a spare Google account, not your main one: sign in to YouTube in a private window, export its cookies with a "cookies.txt" browser extension (Netscape format, youtube.com only), and paste them here. They work from the next link, with no restart. Cookies expire after a while; paste fresh ones when YouTube refuses again.</p>
+          <div class="ai-state">${yc.saved ? `<span class="pill ok">${ic("check")}Cookies saved</span><span class="sub">${when(yc.saved_at)}</span>` : `<span class="pill warn">No cookies</span>`}${yc.paused ? `<span class="sub">YouTube refused this server recently.</span>` : ""}</div>
+          <label class="f">Cookies<textarea id="yt_cookies" rows="6" autocomplete="off" spellcheck="false" placeholder="${yc.saved ? "Saved. Paste new cookies to replace them" : "# Netscape HTTP Cookie File"}"></textarea><span class="hint">They stay on this server and are never shown again.</span></label>
+          <div class="row" style="margin-top:20px"><button class="btn primary" data-act="ytsave">Save cookies</button>${yc.saved ? `<button class="btn" data-act="ytremove">Remove</button>` : ""}</div></section>`);
     }
     if (tab === "profile") {
       const joined = me.created_at ? new Date(me.created_at * 1000).toLocaleDateString([], {day: "numeric", month: "long", year: "numeric"}) : "";
@@ -2259,6 +2264,16 @@ document.addEventListener("click", async e => {
         S.status = await api("/api/status"); drawShell(); await drawSettings();
         if (ok) toast(`Saved. ${ok.model} answered, so the AI is ready.`, "ok");
         else toast(`Saved, but the test failed. ${why}`, "bad");
+      } finally { b.disabled = false; }
+      return;
+    }
+    if (a === "ytsave" || a === "ytremove") {
+      b.disabled = true;
+      try {
+        if (a === "ytsave") await send("/api/youtube-cookies", {text: $("#yt_cookies").value}, "PUT");
+        else await api("/api/youtube-cookies", {method: "DELETE"});
+        await drawSettings();
+        toast(a === "ytsave" ? "Cookies saved. The next YouTube link uses them." : "Cookies removed.", "ok");
       } finally { b.disabled = false; }
       return;
     }
