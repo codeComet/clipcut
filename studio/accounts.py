@@ -31,9 +31,8 @@ IG = "https://graph.instagram.com"
 IG_UPLOAD = "https://rupload.facebook.com/ig-api-upload/v21.0"
 IG_SCOPES = "instagram_business_basic,instagram_business_content_publish"
 # Meta's Facebook Login for Business: Instagram accounts linked to a Facebook Page, reached through graph.facebook.com.
-# The permissions come from the login configuration (its id is saved with the app); without one, they are asked for.
+# The permissions come from the login configuration, whose id is saved with the app: Login for Business needs one.
 FB = "https://graph.facebook.com/v21.0"
-FB_SCOPES = "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management"
 TT = "https://open.tiktokapis.com/v2"
 TT_SCOPES = "user.info.basic,video.publish"
 PLATFORM_NAMES = {"youtube": "YouTube", "instagram": "Instagram", "tiktok": "TikTok"}
@@ -115,7 +114,7 @@ def ig_config_id() -> str:
 
 
 def can_connect(platform: str) -> bool:
-    return all(app_keys(APP_FOR[platform]))
+    return all(app_keys(APP_FOR[platform])) and (platform != "instagram" or bool(ig_config_id()))
 
 
 def redirect_for(platform: str) -> str:
@@ -127,7 +126,7 @@ def apps_public() -> dict:
     out = {}
     for platform, name in APP_FOR.items():
         cid, secret = app_keys(name)
-        out[platform] = {"ready": bool(cid and secret), "id_label": APPS[name][0], "secret_label": APPS[name][1],
+        out[platform] = {"ready": can_connect(platform), "id_label": APPS[name][0], "secret_label": APPS[name][1],
                          "id_hint": cid[:6] + "…" if len(cid) > 10 else cid, "redirect": redirect_for(platform),
                          "https": config.PUBLIC_URL.startswith("https://"),
                          "from_dashboard": bool((_apps_saved().get(name) or {}).get("id"))}
@@ -153,6 +152,8 @@ def save_app(platform: str, cid: str, secret: str, config_id: str = "") -> dict:
     secret = secret or (old.get("secret") if old.get("id") == cid else "")
     if not secret:
         raise ValueError(f"Paste the {APPS[name][1]} too.")
+    if name == "instagram" and not (config_id or old.get("config") or config.env("CLIPCUT_IG_CONFIG_ID")):
+        raise ValueError("Paste the configuration ID too (Facebook Login for Business, Configurations).")
     with _lock:
         data = dict(_apps_saved())
         data[name] = {"id": cid, "secret": secret}
@@ -196,10 +197,9 @@ def connect_url(platform: str) -> str:
             "client_id": cid, "redirect_uri": redirect, "response_type": "code", "scope": YT_SCOPES,
             "access_type": "offline", "prompt": "consent", "state": state})
     if platform == "instagram":
-        q = {"client_id": cid, "redirect_uri": redirect, "response_type": "code", "state": state}
-        cfg = ig_config_id()
-        q.update({"config_id": cfg, "override_default_response_type": "true"} if cfg else {"scope": FB_SCOPES})
-        return "https://www.facebook.com/v21.0/dialog/oauth?" + urlencode(q)
+        return "https://www.facebook.com/v21.0/dialog/oauth?" + urlencode({
+            "client_id": cid, "redirect_uri": redirect, "response_type": "code", "state": state,
+            "config_id": ig_config_id(), "override_default_response_type": "true"})
     return "https://www.tiktok.com/v2/auth/authorize/?" + urlencode({
         "client_key": cid, "redirect_uri": redirect, "response_type": "code", "scope": TT_SCOPES, "state": state})
 

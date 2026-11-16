@@ -40,8 +40,12 @@ check("Connect before setup comes back with a reason", (r.status_code, "connect_
 check("setup from another website is refused", a.put("/api/apps", json={"platform": "tiktok", "client_id": "abcd1234", "client_secret": "s"},
                                                     headers={"Origin": "https://evil.example"}).status_code, 403)
 check("a bad id is refused", a.put("/api/apps", json={"platform": "tiktok", "client_id": "a b<", "client_secret": "s"}, headers=ORIGIN).status_code, 400)
+check("Instagram without a configuration ID is refused (Login for Business needs one)",
+      a.put("/api/apps", json={"platform": "instagram", "client_id": "1234567890", "client_secret": "instagram-secret-value"}, headers=ORIGIN).status_code, 400)
+check("a configuration ID that is not one is refused",
+      a.put("/api/apps", json={"platform": "instagram", "client_id": "1234567890", "client_secret": "instagram-secret-value", "config_id": "abc"}, headers=ORIGIN).status_code, 400)
 for pf, cid in (("youtube", "g-client-123.apps"), ("instagram", "1234567890"), ("tiktok", "awtiktokkey123")):
-    r = a.put("/api/apps", json={"platform": pf, "client_id": cid, "client_secret": f"{pf}-secret-value"}, headers=ORIGIN)
+    r = a.put("/api/apps", json={"platform": pf, "client_id": cid, "client_secret": f"{pf}-secret-value", "config_id": "1111111111"}, headers=ORIGIN)
     check(f"{pf} app saved", (r.status_code, r.json()[pf]["ready"]), (200, True))
 apps = a.get("/api/apps").json()
 check("secrets are never sent back", any("secret-value" in json.dumps(v) for v in apps.values()), False)
@@ -133,13 +137,11 @@ check("YouTube: Google's page, asking to upload", (loc.netloc, "youtube.upload" 
 check("YouTube: back on Connected apps, connected", (back.status_code, back.headers["location"].startswith("/app/settings/apps?connected=youtube")), (303, True))
 loc, back = connect(b, "instagram", "igcode#_")
 q = parse_qs(loc.query)
-check("Instagram, no configuration saved: Facebook's login, asking to publish", (loc.netloc, q["client_id"][0], "instagram_content_publish" in q["scope"][0]),
-      ("www.facebook.com", "1234567890", True))
+check("Instagram: Facebook's Login for Business, with the configuration and no scopes of its own",
+      (loc.netloc, q["client_id"][0], q["config_id"][0], "scope" in q), ("www.facebook.com", "1234567890", "1111111111", False))
 check("Instagram: connected, with the #_ added to the code removed", "connected=instagram" in back.headers["location"])
-check("a configuration ID that is not one is refused",
-      a.put("/api/apps", json={"platform": "instagram", "client_id": "", "client_secret": "", "config_id": "abc"}, headers=ORIGIN).status_code, 400)
 r = a.put("/api/apps", json={"platform": "instagram", "client_id": "", "client_secret": "", "config_id": "2182464959058717"}, headers=ORIGIN)
-check("the configuration ID alone can be saved, keeping the app", (r.status_code, r.json()["instagram"]["config_id"], accounts.app_keys("instagram")),
+check("a new configuration ID alone can be saved, keeping the app", (r.status_code, r.json()["instagram"]["config_id"], accounts.app_keys("instagram")),
       (200, "2182464959058717", ("1234567890", "instagram-secret-value")))
 loc, back = connect(b, "instagram", "igcode")
 q = parse_qs(loc.query)
