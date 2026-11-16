@@ -72,6 +72,14 @@ check("anything else is not guessed at", ai.explain("something odd"), "")
 ai.note_problem("HTTP 404 model not found")
 check("the reason is kept for the dashboard, and cleared when the AI answers again", (bool(ai.problem["text"]), (ai.clear_problem(), ai.problem["text"])[1]), (True, ""))
 
+# ---- YouTube on a data-centre server: proxy and cookies
+check("no proxy and no cookies file: yt-dlp gets nothing extra", config.ytdlp_opts(), {})
+config.YTDLP_PROXY = "http://user:pass@proxy.example:8080"
+config.YTDLP_COOKIES.write_text("# Netscape HTTP Cookie File\n")
+check("the proxy and the cookies file are both passed to yt-dlp", config.ytdlp_opts(),
+      {"proxy": "http://user:pass@proxy.example:8080", "cookiefile": str(config.YTDLP_COOKIES)})
+config.YTDLP_PROXY = ""; config.YTDLP_COOKIES.unlink()
+
 print("ALL PASSED" if not fails else f"{len(fails)} failed")
 shutil.rmtree(os.environ["CLIPCUT_DATA"], ignore_errors=True); shutil.rmtree(hidden, ignore_errors=True)
 sys.exit(1 if fails else 0)

@@ -181,6 +181,19 @@ MAX_CREATORS = int(_limit("CLIPCUT_MAX_CREATORS"))               # creators one 
 ALLOWED_SITES = tuple(s.strip().lower() for s in env(
     "CLIPCUT_ALLOWED_SITES", "youtube.com,youtu.be,twitch.tv,kick.com").split(",") if s.strip())
 
+# YouTube often refuses servers in data centres ("confirm you're not a bot"). A (residential) proxy and/or cookies
+# from a signed-in browser get past it. Cookies: a Netscape cookies.txt saved as <data folder>/youtube-cookies.txt.
+YTDLP_PROXY = env("CLIPCUT_YTDLP_PROXY", "").strip()
+YTDLP_COOKIES = DATA_DIR / "youtube-cookies.txt"
+
+
+def ytdlp_opts() -> dict:
+    """Extra yt-dlp options for every download and lookup: the proxy and cookies, when they are set up."""
+    out = {"proxy": YTDLP_PROXY} if YTDLP_PROXY else {}
+    if YTDLP_COOKIES.is_file():
+        out["cookiefile"] = str(YTDLP_COOKIES)
+    return out
+
 # ---------------------------------------------------------------- AI (bring your own key: see studio/ai.py)
 # These are the starting values. Whatever is saved from the dashboard (Settings, AI) is used instead.
 AI_PROVIDER = env("CLIPCUT_AI_PROVIDER", "gemini").strip().lower()            # gemini, openai, xai, groq, openrouter, anthropic, ollama, custom
