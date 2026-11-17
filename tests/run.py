@@ -22,7 +22,7 @@ def main() -> int:
     data = Path(tempfile.mkdtemp(prefix="clipcut-test-"))
     env = {**os.environ, "CLIPCUT_DATA": str(data), "CLIPCUT_PORT": str(PORT), "CLIPCUT_PUBLIC_URL": BASE,
            "CLIPCUT_HOST": "127.0.0.1", "CLIPCUT_AUTO_RELOAD": "0", "DATABASE_URL": "",
-           "CLIPCUT_ACCOUNTS": "1", "CLIPCUT_FETCH_MODEL": "0", "CLIPCUT_UPDATE_CHECK": "0",                   # these tests are about people signing in; tests/test_local.py covers the default
+           "CLIPCUT_ACCOUNTS": "1", "CLIPCUT_FETCH_MODEL": "0",                   # these tests are about people signing in; tests/test_local.py covers the default
            # nothing outside this machine is contacted: no AI, no email, no Google sign-in
            "CLIPCUT_SMTP_HOST": "", "CLIPCUT_VERIFY_EMAIL": "1",   # the tests cover the confirm-your-email rule
            "GOOGLE_CLIENT_ID": "", "GOOGLE_CLIENT_SECRET": "", "GOOGLE_CLIENT_FILE": "", "PYTHONUNBUFFERED": "1",
@@ -54,7 +54,6 @@ def main() -> int:
                 ("no sign-in, and the AI key from the dashboard", ["tests/test_local.py"]),
                 ("Hindi and Urdu captions in Roman letters", ["tests/test_roman.py"]),
                 ("connecting YouTube, Instagram and TikTok", ["tests/test_connect.py"]),
-                ("the new-version notice", ["tests/test_updates.py"]),
                 ("no limits by default", ["tests/test_limits.py"]),
                 ("captions never overlap, stuck clips, sentence endings", ["tests/test_stuck.py"]),
                 ("fresh installs: ffmpeg, the speech model, AI errors", ["tests/test_tools.py"]),
