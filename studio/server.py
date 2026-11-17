@@ -1477,7 +1477,7 @@ def add_posts(body: dict = Body(...)):
     made = posting.enqueue(job, clip, [str(a) for a in body.get("accounts", [])][:20], now=bool(body.get("now")))
     if not made:
         raise HTTPException(400, "Nothing was queued. Pick at least one account this clip has not already gone to.")
-    return {"queued": len(made)}
+    return {"queued": len(made), "due_at": min(p["due_at"] for p in made)}
 
 
 @app.post("/api/posts/{pid}/{action}")
