@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>try{document.documentElement.dataset.theme=localStorage.theme||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch{}</script>
 <style>
 :root{
   --brand:#FF8B33;--brand-press:#F27A1F;--brand-ink:#2A1A12;--brand-soft:#FFF2E8;--brand-line:#FFD9BC;--brand-deep:#A9480A;
@@ -17,7 +18,15 @@
   --text:#211813;--dim:#6D6159;--faint:#A0948C;
   --good:#0F8A57;--good-soft:#E6F6EE;--bad:#D3343F;--bad-soft:#FDECEE;
   --r-lg:16px;--r:12px;--r-sm:8px;
+  --on-brand:#2A1A12;--card:#fff;--hover:#EDE3DB;
   color-scheme:light;
+}
+:root[data-theme=dark]{
+  --brand-ink:#FFF2E8;--brand-soft:#3A2416;--brand-line:#5A3518;--brand-deep:#FFB27A;
+  --bg:#17110E;--card:#1F1814;--muted:#261E19;--line:#2E2520;--line-2:#3D312A;
+  --text:#F4EEEA;--dim:#B3A59B;--faint:#85776E;
+  --good-soft:#12301F;--bad-soft:#3A1A1D;--hover:#33281F;
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -28,7 +37,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 svg{width:18px;height:18px;flex:none;fill:currentColor}
 ::selection{background:var(--brand-line)}
 :focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#E2D9D7;border-radius:999px;border:3px solid #fff}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:999px;border:3px solid var(--card)}
 
 .app{display:grid;grid-template-columns:240px minmax(0,1fr);height:100vh}
 .side{background:var(--frame);color:var(--frame-text);display:flex;flex-direction:column;height:100vh;padding:14px 10px 12px;min-width:0}
@@ -39,11 +48,11 @@ svg{width:18px;height:18px;flex:none;fill:currentColor}
 .nav-item{display:flex;align-items:center;gap:10px;width:100%;min-height:34px;padding:0 10px;border-radius:7px;border:0;background:transparent;color:var(--frame-text);font-size:14px;font-weight:500;cursor:pointer;text-align:left;text-decoration:none;transition:background-color .15s ease,color .15s ease}
 .nav-item svg{width:17px;height:17px;color:var(--frame-dim)}
 .nav-item:hover{background:var(--frame-2)}
-.nav-item.on{background:var(--brand);color:var(--brand-ink);font-weight:600}
-.nav-item.on svg{color:var(--brand-ink)}
+.nav-item.on{background:var(--brand);color:var(--on-brand);font-weight:600}
+.nav-item.on svg{color:var(--on-brand)}
 .nav-item .label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .count{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.1);color:var(--frame-text)}
-.nav-item.on .count{background:rgba(42,26,18,.14);color:var(--brand-ink)}
+.nav-item.on .count{background:rgba(42,26,18,.14);color:var(--on-brand)}
 .side-foot{display:flex;flex-direction:column;gap:2px;padding-top:12px;border-top:1px solid var(--frame-line)}
 .who{padding:10px 10px 2px;font-size:12px;color:var(--frame-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .who b{display:block;font-size:13px;color:var(--frame-text);font-weight:600;overflow:hidden;text-overflow:ellipsis}
@@ -51,26 +60,28 @@ svg{width:18px;height:18px;flex:none;fill:currentColor}
 main{background:var(--bg);margin:8px 8px 8px 0;border-radius:var(--r-lg);height:calc(100vh - 16px);overflow-y:auto;min-width:0;scrollbar-gutter:stable}
 .topbar{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 28px;min-height:62px;border-bottom:1px solid var(--line)}
 .topbar .titles{flex:1;min-width:0}
+.icon-btn{width:36px;height:36px;display:grid;place-items:center;border-radius:var(--r);border:0;background:transparent;color:var(--dim);cursor:pointer;flex:none}
+.icon-btn:hover{background:var(--muted);color:var(--text)}
 .topbar h1{font-size:19px;font-weight:600;letter-spacing:-.01em;color:var(--brand-ink)}
 .topbar p{font-size:13px;color:var(--dim)}
 .content{padding:22px 28px 60px;max-width:1320px}
 
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;padding:0 14px;border-radius:var(--r);border:1px solid var(--line-2);background:#fff;color:var(--text);cursor:pointer;text-decoration:none;white-space:nowrap;font-weight:600;transition:background-color .15s ease,border-color .15s ease,color .15s ease}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;padding:0 14px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--card);color:var(--text);cursor:pointer;text-decoration:none;white-space:nowrap;font-weight:600;transition:background-color .15s ease,border-color .15s ease,color .15s ease}
 .btn:hover{background:var(--muted)}
-.btn.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.btn.primary{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 .btn.primary:hover{background:#FF9A4C;border-color:#FF9A4C}
-.btn.primary:disabled{background:#F3E7DD;border-color:#F3E7DD;color:#B9A597;cursor:not-allowed}
+.btn.primary:disabled{background:var(--line-2);border-color:var(--line-2);color:#B9A597;cursor:not-allowed}
 .btn.danger{background:var(--bad-soft);border-color:transparent;color:var(--bad)}
-.btn.danger:hover{background:#FADDE0}
+.btn.danger:hover{background:var(--bad-soft)}
 .btn.sm{height:32px;padding:0 11px;font-size:13px;gap:6px}
 .btn.sm svg{width:16px;height:16px}
-input[type=text],input[type=search],input[type=number],textarea{height:38px;padding:0 12px;border-radius:var(--r);border:1px solid var(--line-2);background:#fff;width:100%;transition:border-color .15s ease}
-input:hover,textarea:hover{border-color:#CFC4BC}
+input[type=text],input[type=search],input[type=number],textarea{height:38px;padding:0 12px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--card);width:100%;transition:border-color .15s ease}
+input:hover,textarea:hover{border-color:var(--faint)}
 input:focus,textarea:focus{outline:0;border-color:var(--brand)}
 label.f{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--dim);font-weight:600}
 
-.card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:22px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:22px;margin-bottom:16px}
 .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}
 .card-head h2{font-size:15px;font-weight:600;color:var(--brand-ink)}
 .help,.sub{color:var(--dim);font-size:13px}
@@ -78,12 +89,12 @@ label.f{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--di
 .pill.ok{color:var(--good);background:var(--good-soft)}
 .pill.bad{color:var(--bad);background:var(--bad-soft)}
 .pill.warn{color:var(--brand-deep);background:var(--brand-soft)}
-.pill.brand{color:var(--brand-ink);background:var(--brand)}
+.pill.brand{color:var(--on-brand);background:var(--brand)}
 .empty{border:1px dashed var(--line-2);border-radius:var(--r);padding:40px 20px;text-align:center;color:var(--dim)}
 .empty b{display:block;color:var(--brand-ink);font-size:15px;margin-bottom:2px}
 
 .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:16px}
-.tile{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;display:flex;flex-direction:column;min-width:0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;display:flex;flex-direction:column;min-width:0}
 .tile i{width:32px;height:32px;border-radius:var(--r-sm);background:var(--brand-soft);color:var(--brand-deep);display:grid;place-items:center;margin-bottom:14px}
 .tile b{font-size:26px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--brand-ink);line-height:1.1}
 .tile span{font-size:13px;color:var(--dim);margin-top:2px}
@@ -109,17 +120,17 @@ td{padding:12px 10px;border-top:1px solid var(--line);vertical-align:middle}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 td.acts{text-align:right;white-space:nowrap}
 tr.u{cursor:pointer}
-tr.u:hover>td{background:#FCFAF8}
+tr.u:hover>td{background:var(--muted)}
 td .em{font-size:12px;color:var(--dim);overflow-wrap:anywhere}
 td b{color:var(--brand-ink);font-weight:600}
 .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
 .toolbar input{max-width:340px}
 .seg{display:flex;gap:2px;padding:3px;background:var(--muted);border-radius:11px}
 .seg button{height:32px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:var(--dim);font-size:13px;font-weight:600;cursor:pointer;transition:background-color .15s ease,color .15s ease}
-.seg button:hover{background:#EDE3DB;color:var(--text)}
-.seg button.on{background:var(--brand);color:var(--brand-ink)}
+.seg button:hover{background:var(--hover);color:var(--text)}
+.seg button.on{background:var(--brand);color:var(--on-brand)}
 
-dialog{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:var(--r-lg);padding:0;max-width:calc(100vw - 32px)}
+dialog{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:var(--r-lg);padding:0;max-width:calc(100vw - 32px)}
 dialog::backdrop{background:rgba(14,12,11,.42)}
 .dlg{padding:24px;width:460px;max-width:100%;display:flex;flex-direction:column;gap:14px}
 .dlg.wide{width:720px;max-height:calc(100vh - 48px);overflow:auto}
@@ -130,7 +141,7 @@ dialog::backdrop{background:rgba(14,12,11,.42)}
 .facts div{background:var(--muted);border-radius:var(--r-sm);padding:10px 12px}
 .facts b{display:block;font-size:17px;color:var(--brand-ink);font-variant-numeric:tabular-nums}
 .facts span{font-size:12px;color:var(--dim)}
-.note{background:var(--brand-soft);color:#7A3E0C;border-radius:var(--r-sm);padding:10px 12px;font-size:13px}
+.note{background:var(--brand-soft);color:var(--brand-deep);border-radius:var(--r-sm);padding:10px 12px;font-size:13px}
 #toasts{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:50}
 .toast{background:var(--frame);color:var(--frame-text);border:1px solid var(--frame-2);border-radius:var(--r);padding:12px 16px;max-width:380px;display:flex;gap:10px;align-items:center;font-weight:500}
 .toast::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--brand);flex:none}
@@ -169,7 +180,7 @@ dialog::backdrop{background:rgba(14,12,11,.42)}
     <div class="side-foot" id="foot"></div>
   </aside>
   <main id="main">
-    <header class="topbar"><div class="titles"><h1 id="title">Admin</h1><p id="subtitle"></p></div><div class="row" id="actions"></div></header>
+    <header class="topbar"><div class="titles"><h1 id="title">Admin</h1><p id="subtitle"></p></div><div class="row" id="actions"></div><button class="icon-btn" id="themeBtn"></button></header>
     <div class="content" id="view"><div class="empty">Loading…</div></div>
   </main>
 </div>
@@ -183,6 +194,8 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const I = {
+ "moon": "<path d=\"M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.36A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.36Z\"/>",
+ "sun": "<path d=\"M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z\"/>",
  "chat": "<path d=\"M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-6.54-.67L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Zm12-88a12,12,0,1,1-12-12A12,12,0,0,1,140,128Zm-44,0a12,12,0,1,1-12-12A12,12,0,0,1,96,128Zm88,0a12,12,0,1,1-12-12A12,12,0,0,1,184,128Z\"/>",
  "check": "<path d=\"M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z\"/>",
  "home": "<path d=\"M219.31,108.68l-80-80a16,16,0,0,0-22.62,0l-80,80A15.87,15.87,0,0,0,32,120v96a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V160h32v56a8,8,0,0,0,8,8h64a8,8,0,0,0,8-8V120A15.87,15.87,0,0,0,219.31,108.68ZM208,208H160V152a8,8,0,0,0-8-8H104a8,8,0,0,0-8,8v56H48V120l80-80,80,80Z\"/>",
@@ -196,6 +209,9 @@ const I = {
  "plus": "<path d=\"M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z\"/>"
 };
 const ic = n => `<svg viewBox="0 0 256 256" aria-hidden="true">${I[n] || ""}</svg>`;
+const themeBtn = $("#themeBtn"), paintTheme = () => { const d = document.documentElement.dataset.theme === "dark"; themeBtn.innerHTML = ic(d ? "sun" : "moon"); themeBtn.title = themeBtn.ariaLabel = d ? "Switch to light mode" : "Switch to dark mode"; };
+themeBtn.onclick = () => { const t = document.documentElement.dataset.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; try { localStorage.theme = t; } catch {} paintTheme(); };
+paintTheme();
 const num = v => (Number(v) || 0).toLocaleString();
 const kfmt = v => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(1) + "k" : String(v);
 const when = t => t ? new Date(t * 1000).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}) : "Never";
