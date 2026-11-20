@@ -52,6 +52,7 @@ def main() -> int:
                 ("big uploads in pieces", ["tests/test_upload_parts.py", BASE]),
                 ("AI services", ["tests/test_ai.py"]),
                 ("no sign-in, and the AI key from the dashboard", ["tests/test_local.py"]),
+                ("the API for scripts: keys, clips, post queue with approval", ["tests/test_api.py"]),
                 ("Hindi and Urdu captions in Roman letters", ["tests/test_roman.py"]),
                 ("connecting YouTube, Instagram and TikTok", ["tests/test_connect.py"]),
                 ("no limits by default", ["tests/test_limits.py"]),
