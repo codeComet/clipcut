@@ -298,7 +298,7 @@ def get(aid):
 
 def list_accounts() -> list:
     return [{"id": a["id"], "platform": a["platform"], "label": PLATFORM_NAMES[a["platform"]], "name": a["name"],
-             "added": a["added"], "detail": a.get("detail", "")} for a in _all()]
+             "handle": a["name"], "added": a["added"], "detail": a.get("detail", "")} for a in _all()]
 
 
 def _put(acc):
@@ -372,14 +372,17 @@ def youtube_upload(acc, path: Path, title: str, description: str, tags: list, pr
     return done["id"], f"https://www.youtube.com/shorts/{done['id']}"
 
 
-def youtube_views(acc, ids: list) -> dict:
+def youtube_stats(acc, ids: list) -> dict:
+    """video id -> views, likes, comments. YouTube does not say how often a video was shared."""
     out = {}
     for i in range(0, len(ids), 50):
         r = _check(httpx.get("https://www.googleapis.com/youtube/v3/videos",
                              params={"part": "statistics", "id": ",".join(ids[i:i + 50])},
                              headers={"Authorization": f"Bearer {_yt_token(acc)}"}, timeout=30), "Reading YouTube views").json()
         for it in r.get("items", []):
-            out[it["id"]] = int(it["statistics"].get("viewCount", 0))
+            st = it["statistics"]
+            out[it["id"]] = {"views": int(st.get("viewCount", 0)), "likes": int(st.get("likeCount", 0)),
+                             "comments": int(st.get("commentCount", 0))}
     return out
 
 
@@ -503,14 +506,14 @@ def instagram_upload(acc, path: Path, caption: str, job_id: str = ""):
     return pub["id"], link
 
 
-def instagram_views(acc, media_id: str):
+def instagram_stats(acc, media_id: str) -> dict:
+    """views, likes, comments, shares of one post; {} when Instagram will not say."""
     api = acc.get("api") or IG
-    r = httpx.get(f"{api}/{media_id}/insights", params={"metric": "views"},
+    r = httpx.get(f"{api}/{media_id}/insights", params={"metric": "views,likes,comments,shares"},
                   headers={"Authorization": f"Bearer {_ig_token(acc)}"}, timeout=30)
     if r.status_code != 200:
-        return None
-    data = r.json().get("data", [])
-    return int(data[0]["values"][0]["value"]) if data else None
+        return {}
+    return {d["name"]: int(d["values"][0]["value"]) for d in r.json().get("data", []) if d.get("values")}
 
 
 # ------------------------------------------------------------------ TikTok (Login Kit + Content Posting API)

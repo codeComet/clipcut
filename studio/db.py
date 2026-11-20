@@ -45,6 +45,13 @@ sessions = sa.Table(
     sa.Column("ip", sa.String(64)),
     sa.Column("agent", sa.String(300)),
 )
+api_keys = sa.Table(                                                          # keys for scripts that use the API
+    "api_keys", meta,
+    sa.Column("key_hash", sa.String(64), primary_key=True),                   # sha256 of the key; the key itself is never stored
+    sa.Column("user_id", sa.String(40), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True),
+    sa.Column("name", sa.String(60), nullable=False, server_default=""),
+    sa.Column("created_at", sa.Float, nullable=False),
+)
 usage = sa.Table(                                                             # one row per AI call
     "usage", meta,
     sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),

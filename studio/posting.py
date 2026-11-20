@@ -19,7 +19,7 @@ except ValueError:
 def _mine() -> list:
     u = ctx.uid()
     return [p for p in _posts if p.get("user") == u]
-OPEN = ("scheduled", "posting")
+OPEN = ("approval", "scheduled", "posting")     # "approval": queued by a script, waits for a tap in the post queue
 
 
 def _save():
@@ -54,7 +54,7 @@ def _next_slot(account_id, gap_min, cap):
     return t
 
 
-def enqueue(job, clip, account_ids, now=False) -> list:
+def enqueue(job, clip, account_ids, now=False, due=None, caption=None, approval=False) -> list:
     c = creators.get(job["creator"]) or creators.DEFAULTS
     made = []
     with _lock:
@@ -65,10 +65,10 @@ def enqueue(job, clip, account_ids, now=False) -> list:
             if any(p["job"] == job["id"] and p["clip"] == clip["id"] and p["account"] == aid
                    and p["status"] in OPEN + ("posted",) for p in _mine()):
                 continue  # never post the same clip to the same account twice
-            due = time.time() if now else _next_slot(aid, c["post_gap_min"], c["daily_cap"])
+            when = time.time() if now else due if due is not None else _next_slot(aid, c["post_gap_min"], c["daily_cap"])
             p = {"id": secrets.token_hex(8), "user": ctx.uid(), "job": job["id"], "clip": clip["id"], "creator": job["creator"],
-                 "account": aid, "account_name": acc["name"], "platform": acc["platform"], "status": "scheduled",
-                 "due_at": due, "created": time.time(), "title": clip.get("title") or clip.get("hook") or "Clip",
+                 "account": aid, "account_name": acc["name"], "platform": acc["platform"], "status": "approval" if approval else "scheduled",
+                 "due_at": when, "caption": caption, "created": time.time(), "title": clip.get("title") or clip.get("hook") or "Clip",
                  "score": clip.get("score", 0), "tries": 0, "url": "", "remote_id": "", "error": None, "views": None}
             _posts.append(p)
             made.append(p)
@@ -106,13 +106,14 @@ def _post(p):
             raise RuntimeError("That account was disconnected.")
         path = Path(job["dir"]) / "clips" / clip["file"]
         creator = creators.get(job["creator"]) or dict(creators.DEFAULTS, name="clips")
-        title, cap = clip.get("title") or clip.get("hook") or "Clip", _caption(clip, creator)
+        title, custom = clip.get("title") or clip.get("hook") or "Clip", p.get("caption")
+        cap = custom or _caption(clip, creator)
         if acc["platform"] == "youtube":
             rid, url = accounts.youtube_upload(acc, path, title, cap + "\n\n#Shorts", clip.get("hashtags", []), creator["privacy"])
         elif acc["platform"] == "instagram":
-            rid, url = accounts.instagram_upload(acc, path, f"{title}\n\n{cap}", job["id"])
+            rid, url = accounts.instagram_upload(acc, path, cap if custom else f"{title}\n\n{cap}", job["id"])
         elif acc["platform"] == "tiktok":
-            rid, url = accounts.tiktok_upload(acc, path, f"{title}\n\n{cap}", creator["privacy"])
+            rid, url = accounts.tiktok_upload(acc, path, cap if custom else f"{title}\n\n{cap}", creator["privacy"])
         else:
             raise RuntimeError("That kind of account is no longer supported.")
         p.update(status="posted", posted_at=time.time(), remote_id=rid, url=url, error=None)
@@ -149,19 +150,20 @@ def _run():
 
 
 def _stats_for(recent):
+    """views, likes, comments and shares, as far as each platform tells us."""
     for aid in {p["account"] for p in recent if p["platform"] == "youtube"}:
         acc = accounts.get(aid)
         if acc:
-            views = accounts.youtube_views(acc, [p["remote_id"] for p in recent if p["account"] == aid])
+            got = accounts.youtube_stats(acc, [p["remote_id"] for p in recent if p["account"] == aid])
             for p in recent:
-                if p["account"] == aid and p["remote_id"] in views:
-                    p["views"] = views[p["remote_id"]]
+                if p["account"] == aid and p["remote_id"] in got:
+                    p.update(got[p["remote_id"]], stats_at=time.time())
     for p in recent:
         acc = accounts.get(p["account"]) if p["platform"] == "instagram" else None
         if acc:
-            v = accounts.instagram_views(acc, p["remote_id"])
-            if v is not None:
-                p["views"] = v
+            got = accounts.instagram_stats(acc, p["remote_id"])
+            if got:
+                p.update(got, stats_at=time.time())
 
 
 def _stats():
@@ -176,10 +178,33 @@ def _stats():
         time.sleep(1800)
 
 
+def find(pid):
+    return next((p for p in _mine() if p["id"] == pid), None)
+
+
+def public(p) -> dict:
+    return {"post_id": p["id"], "clip_id": f"{p['job']}.{p['clip']}", **{k: v for k, v in p.items() if k != "user"}}
+
+
+def listing(everything=False) -> list:
+    rows = [p for p in _mine() if everything or p["status"] in OPEN]
+    return [public(p) for p in sorted(rows, key=lambda p: p["due_at"])][-500:]
+
+
+def approve(pid):
+    with _lock:
+        p = find(pid)
+        if not p or p["status"] != "approval":
+            raise ValueError("Only posts waiting for approval can be approved.")
+        p.update(status="scheduled", due_at=max(p["due_at"], time.time()))
+        _save()
+    _mirror(p)
+
+
 def cancel(pid):
     with _lock:
-        p = next((p for p in _mine() if p["id"] == pid), None)
-        if not p or p["status"] != "scheduled":
+        p = find(pid)
+        if not p or p["status"] not in ("scheduled", "approval"):
             raise ValueError("Only posts that are still waiting can be cancelled.")
         p["status"] = "cancelled"
         _save()

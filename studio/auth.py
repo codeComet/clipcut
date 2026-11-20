@@ -299,6 +299,33 @@ def user_for(token: str, fresh: bool = False):
     return row
 
 
+API_PREFIX = "cc_"
+
+
+def new_api_key(uid: str, name: str = "") -> str:
+    """A new key for scripts, shown once. Only its fingerprint is kept."""
+    key = API_PREFIX + secrets.token_urlsafe(32)
+    with db.engine.begin() as c:
+        c.execute(db.api_keys.insert().values(key_hash=_h(key), user_id=uid, name=name[:60], created_at=time.time()))
+    return key
+
+
+def user_for_key(key: str):
+    """The account an API key belongs to, or None. Disabled accounts get None."""
+    if not key.startswith(API_PREFIX) or len(key) > 200:
+        return None
+    h, now = "k:" + _h(key), time.time()
+    got = _sess.get(h)
+    if got and now - got[0] < SESS_FOR:
+        return got[1]
+    with db.engine.connect() as c:
+        row = c.execute(sa.select(db.users).join(db.api_keys, db.api_keys.c.user_id == db.users.c.id).where(
+            db.api_keys.c.key_hash == _h(key), db.users.c.disabled == sa.false())).first()
+    if row:
+        _sess[h] = (now, row)
+    return row
+
+
 def forget(uid: str):
     """This account's sessions changed (signed out, disabled, new password): stop trusting what is remembered."""
     for k in [k for k, v in list(_sess.items()) if v[1].id == uid]:

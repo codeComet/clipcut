@@ -93,8 +93,10 @@ class Gate:
             resp = RedirectResponse(redirect, 303, headers=no_keep) if redirect else JSONResponse({"detail": msg}, status, headers=no_keep)
             await resp(scope, receive, send)
 
+        authz = req.headers.get("authorization", "")
+        key = authz[7:].strip() if authz[:7].lower() == "bearer " else ""
         if method not in ("GET", "HEAD", "OPTIONS"):
-            if not _from_here(req):
+            if not key and not _from_here(req):         # a browser never sends the key by itself, so a keyed call is no forgery
                 return await deny(403, "Cross-site requests are not allowed.")
             # Only the upload may be big. Everything else is a small form, and is cut off at 256 KB whatever its
             # headers claim, so nobody can fill the server's memory by posting junk (signed in or not).
@@ -119,7 +121,14 @@ class Gate:
 
         is_open = path in PAGES or any(path.startswith(p) for p in OPEN)
         admin_area = path == "/admin" or path.startswith(("/admin/", "/api/admin/"))
-        if config.ACCOUNTS:
+        if key:
+            # A script with an API key: only the API and clip files, never the admin area, always as the key's owner.
+            if admin_area or not path.startswith(("/api/", "/media/")):
+                return await deny(404, "Not Found")
+            user = await run_in_threadpool(auth.user_for_key, key)
+            if not user:
+                return await deny(401, "That API key isn't valid.")
+        elif config.ACCOUNTS:
             cookie = req.cookies.get(auth.COOKIE, "")
             user = auth._sess.get(auth._h(cookie)) if cookie and not admin_area else None      # remembered: no database, no thread hop
             user = user[1] if user and time.time() - user[0] < auth.SESS_FOR else (
@@ -150,6 +159,7 @@ class Gate:
         if user and path in ("/login", "/signup"):
             return await deny(303, "", redirect="/app")
         scope.setdefault("state", {})["user"] = user
+        scope["state"]["api"] = bool(key)
         if user and path in ("/api/upload", "/api/upload/start") and method == "POST":
             # decided before a single byte of the file is accepted: verified, has a free slot, has disk space
             def allowed():
@@ -669,14 +679,46 @@ def sync(v: str = ""):
             "accounts": accounts.list_accounts(), "ai": usage.brief(), "unread": notices.unread()}
 
 
+_API_STATUS = {"running": "processing", "live": "processing", "rendering": "processing", "error": "failed"}
+
+
+def _api(request: Request) -> bool:
+    """Is this a script using an API key? Those get the plain statuses: queued, processing, done, failed."""
+    return bool(getattr(request.state, "api", False))
+
+
+def _job_out(request: Request, job: dict) -> dict:
+    out = jobs.public(job)
+    out["job_id"] = job["id"]
+    out["clip_ids"] = [f"{job['id']}.{c['id']}" for c in job["clips"]]
+    if _api(request):
+        out["status"] = _API_STATUS.get(job["status"], job["status"])
+    return out
+
+
+def _video_key(url: str) -> str:
+    """The same video, however its link is written: YouTube by its video id, anything else by address."""
+    from urllib.parse import parse_qs
+    u = urlparse((url or "").strip())
+    host = (u.hostname or "").lower().removeprefix("www.").removeprefix("m.")
+    if media.is_youtube(url):
+        vid = parse_qs(u.query).get("v", [""])[0] or (
+            u.path.strip("/").split("/")[-1] if host == "youtu.be" or u.path.startswith(("/shorts/", "/live/", "/embed/")) else "")
+        if vid:
+            return "yt:" + vid
+    return host + u.path.rstrip("/").lower()
+
+
 @app.get("/api/jobs")
-def list_jobs():
-    return [jobs.public(j) for j in jobs.list_jobs()]
+def list_jobs(request: Request, url: str = ""):
+    want = _video_key(url) if url.strip() else None
+    return [_job_out(request, j) for j in jobs.list_jobs()
+            if want is None or (j["source"].get("url") and _video_key(j["source"]["url"]) == want)]
 
 
 @app.get("/api/jobs/{jid}")
-def get_job(jid: str):
-    return jobs.public(_job_or_404(jid))
+def get_job(request: Request, jid: str):
+    return _job_out(request, _job_or_404(jid))
 
 
 @app.get("/api/preview")
@@ -701,8 +743,13 @@ def link_preview(request: Request, url: str = ""):
         raise HTTPException(422, "Couldn't open that video. Check the link is public and complete.")
 
 
+# What a script may send instead of "options": the names on the Options panel, and where each one goes.
+API_OPTIONS = {"count": "max_clips", "min_sec": "min_len", "max_sec": "max_len", "caption_style": "style",
+               "layout": "layout", "quality": "quality", "from_min": "range_start", "to_min": "range_end"}
+
+
 @app.post("/api/jobs")
-def create_from_link(body: dict = Body(...)):
+def create_from_link(request: Request, body: dict = Body(...)):
     _need_verified()
     _quota()
     _throttle("newjob:" + ctx.uid(), 30, 600)
@@ -716,19 +763,39 @@ def create_from_link(body: dict = Body(...)):
     creator = str(body.get("creator") or "") or None
     if creator and not creators.get(creator):
         raise HTTPException(404, "No such creator")
+    opts = dict(body["options"]) if isinstance(body.get("options"), dict) else {}
+    try:
+        for k, name in API_OPTIONS.items():
+            if body.get(k) not in (None, ""):
+                opts[name] = float(body[k]) * 60 if k in ("from_min", "to_min") else body[k]
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Those options aren't valid.")
+    seen = media._PREVIEWS.get(url)  # already looked up while the user was typing: show it straight away
+    if seen is None and _api(request):
+        # a script gets "live stream" or "not a video" now, instead of a job that fails a minute later
+        try:
+            seen = _lookup(media.preview, url)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        except HTTPException:
+            raise
+        except Exception:  # noqa: BLE001 - the job itself will say what went wrong
+            seen = None
+    if seen and seen.get("is_live"):
+        raise HTTPException(400, "That link is a live stream, so it would never finish downloading. Use live "
+                                 "recording on a creator instead, or wait for the stream to end.")
     try:
         with _create_lock:
             _job_slots()
-            job = jobs.create({"type": "url", "url": url, "name": url}, body.get("options") or {}, creator=creator)
+            job = jobs.create({"type": "url", "url": url, "name": url}, opts, creator=creator)
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e) if isinstance(e, ValueError) else "Those options aren't valid.")
-    seen = media._PREVIEWS.get(url)  # already looked up while the user was typing: show it straight away
     if seen:
         job.update(title=seen["title"], uploader=seen["uploader"], duration=seen["duration"])
         if media.save_thumb(jobs.job_dir(job["id"]), url=url):
             job["thumb"] = True
         jobs.save(job)
-    return jobs.public(job)
+    return _job_out(request, job)
 
 
 @app.post("/api/upload")
@@ -928,6 +995,12 @@ def rerender(jid: str, cid: str, body: dict = Body(...)):
     clip = next((c for c in job["clips"] if c["id"] == cid), None)
     if not clip:
         raise HTTPException(404, "No such clip")
+    _remake(job, clip, body)
+    return jobs.public(job)
+
+
+def _remake(job, clip, body):
+    jid, cid = job["id"], clip["id"]
     if job["status"] in ("queued", "running") or clip.get("status") in ("queued", "rendering"):
         raise HTTPException(409, "This clip is still being made. Try again when it has finished.")
     _throttle("render:" + ctx.uid(), 20, 600, "That's a lot of re-makes in a short time. Wait a few minutes.")
@@ -935,7 +1008,137 @@ def rerender(jid: str, cid: str, body: dict = Body(...)):
         jobs.request_render(jid, cid, body)
     except (ValueError, TypeError) as e:
         raise HTTPException(400, str(e))
-    return jobs.public(job)
+
+
+# ---------------------------------------------------------------- one clip, for scripts (id is "<video id>.<clip id>")
+def _clip_or_404(clip_id: str):
+    jid, _, cid = clip_id.partition(".")
+    job = _job_or_404(jid)
+    clip = next((c for c in job["clips"] if c["id"] == cid), None)
+    if not clip:
+        raise HTTPException(404, "No such clip")
+    return job, clip
+
+
+def _transcript(job, clip) -> str:
+    """What is said in the clip: the tidied caption words when there are some, otherwise the video's transcript."""
+    words = clip.get("fixed_words")
+    if not words:
+        try:
+            words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            words = []
+    said = " ".join(str(w.get("w", "")) for w in words if clip["start"] - 0.3 <= w.get("s", -1) < clip["end"])
+    return re.sub(r"\s+", " ", said).strip()
+
+
+def _clip_out(request: Request, job, clip) -> dict:
+    base = str(request.base_url).rstrip("/")
+    done = clip.get("status") == "done"
+    status = clip.get("status")
+    return {"id": f"{job['id']}.{clip['id']}", "job_id": job["id"],
+            "status": _API_STATUS.get(status, status) if _api(request) else status, "error": clip.get("error"),
+            "score": clip.get("score"), "start": clip["start"], "end": clip["end"],
+            "duration": round(clip["end"] - clip["start"], 2), "big_text": clip.get("hook", ""),
+            "title": clip.get("title", ""), "description": clip.get("description", ""), "hashtags": clip.get("hashtags", []),
+            "caption_style": clip.get("style"), "layout": clip.get("layout"), "version": clip.get("version", 0),
+            "transcript": _transcript(job, clip),
+            "video_url": f"{base}/media/{job['id']}/{clip['file']}" if done and clip.get("file") else None,
+            "thumbnail_url": f"{base}/media/{job['id']}/{clip['cover']}" if done and clip.get("cover") else None,
+            "source_url": job["source"].get("url"), "source_title": job.get("title", ""),
+            "source_channel": job.get("uploader", ""), "posts": clip.get("posts", {})}
+
+
+@app.get("/api/clips/{clip_id}")
+def get_clip(request: Request, clip_id: str):
+    job, clip = _clip_or_404(clip_id)
+    return _clip_out(request, job, clip)
+
+
+@app.patch("/api/clips/{clip_id}")
+def edit_clip(request: Request, clip_id: str, body: dict = Body(...)):
+    """Title and description change straight away. Timing, big text, caption style or layout re-make the clip:
+    check GET /api/clips/{id} until its status is done again."""
+    job, clip = _clip_or_404(clip_id)
+    changes = {k: body[k] for k in ("start", "end", "title", "description", "layout") if k in body}
+    if "big_text" in body:
+        changes["hook"] = body["big_text"]
+    if "caption_style" in body:
+        changes["style"] = body["caption_style"]
+    if {"start", "end", "hook", "style", "layout"} & changes.keys():
+        _remake(job, clip, changes)
+    else:
+        for k, most in (("title", 100), ("description", 2000)):
+            if k in changes:
+                clip[k] = str(changes[k])[:most]
+        jobs.save(job)
+    return _clip_out(request, job, clip)
+
+
+@app.post("/api/clips/{clip_id}/remake")
+def remake_clip(request: Request, clip_id: str):
+    job, clip = _clip_or_404(clip_id)
+    _remake(job, clip, {})
+    return _clip_out(request, job, clip)
+
+
+def _when(v):
+    """An ISO time ("2026-11-21T18:00:00Z") as seconds, or None for "the next free slot"."""
+    if v in (None, ""):
+        return None
+    from datetime import datetime
+    try:
+        t = datetime.fromisoformat(str(v).strip().replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        raise HTTPException(400, "scheduled_at must be an ISO time, like 2026-11-21T18:00:00Z.")
+    if t > time.time() + 90 * 86400:
+        raise HTTPException(400, "scheduled_at can be at most 90 days ahead.")
+    return max(t, time.time())
+
+
+@app.post("/api/clips/{clip_id}/queue")
+def queue_clip(clip_id: str, body: dict = Body(...)):
+    """Schedule a clip on one or more accounts. With "approval": true it waits for a tap in the post queue."""
+    job, clip = _clip_or_404(clip_id)
+    if clip.get("status") != "done":
+        raise HTTPException(409, "That clip is not ready yet.")
+    ids = body.get("account_ids")
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(400, "Send account_ids: a list of account ids from GET /api/accounts.")
+    ids = [str(a) for a in ids][:20]
+    unknown = [a for a in ids if not accounts.get(a)]
+    if unknown:
+        raise HTTPException(400, f"No such account: {', '.join(unknown)[:200]}")
+    caption = body.get("caption")
+    caption = str(caption)[:2200] if caption not in (None, "") else None
+    made = posting.enqueue(job, clip, ids, due=_when(body.get("scheduled_at")), caption=caption,
+                           approval=bool(body.get("approval")))
+    if not made:
+        raise HTTPException(400, "Nothing was queued: this clip has already gone, or is going, to those accounts.")
+    return {"post_ids": [p["id"] for p in made], "posts": [posting.public(p) for p in made]}
+
+
+@app.get("/api/queue")
+def post_queue(all: int = 0):
+    """Posts still to go (waiting for approval, scheduled, posting). all=1 adds posted, failed and cancelled ones."""
+    return posting.listing(everything=bool(all))
+
+
+@app.delete("/api/queue/{pid}")
+def unqueue(pid: str):
+    try:
+        posting.cancel(pid)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.get("/api/posts/{pid}/stats")
+def post_stats(pid: str):
+    p = posting.find(pid)
+    if not p:
+        raise HTTPException(404, "No such post")
+    return {k: p.get(k) for k in ("status", "platform", "url", "posted_at", "views", "likes", "comments", "shares", "stats_at")} | {"post_id": p["id"]}
 
 
 @app.delete("/api/jobs/{jid}")
@@ -1483,7 +1686,7 @@ def add_posts(body: dict = Body(...)):
 @app.post("/api/posts/{pid}/{action}")
 def post_action(pid: str, action: str):
     try:
-        {"cancel": posting.cancel, "retry": posting.retry}[action](pid)
+        {"cancel": posting.cancel, "retry": posting.retry, "approve": posting.approve}[action](pid)
     except KeyError:
         raise HTTPException(404)
     except ValueError as e:
