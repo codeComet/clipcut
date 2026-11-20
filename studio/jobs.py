@@ -342,11 +342,17 @@ def request_render(jid, cid, changes: dict):
     for k in ("start", "end"):
         if k in changes:
             new[k] = round(float(changes[k]), 2)
-    if "src_offset" in clip:  # live clip: can only move inside the saved piece of stream
-        new["start"] = max(new["start"], clip["src_offset"])
-        new["end"] = min(new["end"], clip["src_end"])
     if not (math.isfinite(new["start"]) and math.isfinite(new["end"])) or new["start"] < 0:
         raise ValueError("Those times aren't valid.")
+    new.pop("refetch", None)
+    if "src_offset" in clip and (new["start"] < clip["src_offset"] or new["end"] > clip["src_end"]):
+        # Only a piece of this video was saved (long videos and live streams), and the new times go outside it.
+        if job.get("kind") == "live" or job["source"].get("type") != "url":
+            raise ValueError(f"Only {clip['src_offset']:g} to {clip['src_end']:g} seconds of this stream were saved, "
+                             "so the clip has to stay inside that.")
+        if job.get("duration"):
+            new["end"] = min(new["end"], job["duration"])
+        new["refetch"] = True  # download a new piece for the new times before the clip is made
     if not 3 <= new["end"] - new["start"] <= 180:
         raise ValueError("A clip can be 3 to 180 seconds long.")
     for k in ("hook", "title", "description", "style", "layout"):
@@ -366,6 +372,8 @@ def render_one(job, clip, words):
     clip["status"] = "rendering"
     save(job)
     try:
+        if clip.pop("refetch", False):
+            _refetch_piece(job, clip)
         off = clip.get("src_offset", 0.0)
         src = Path(clip["src"]) if clip.get("src") else Path(job["source_path"])
         if not clip.get("src"):
@@ -473,6 +481,44 @@ def _fetch_piece(job, clip, full_audio):
         job.setdefault("height", meta["height"])
     except Exception as e:  # noqa: BLE001
         clip.update(status="error", error=f"Could not fetch this part of the video: {safe.friendly(e, 250)}")
+
+
+def piece_offset(old_audio, old_off: float, new_audio, want: float) -> float:
+    """Where a newly downloaded piece really begins, found by matching its sound against the piece saved before.
+    The full video's sound is gone by now, but the old piece overlaps the new one, so that is enough."""
+    sr = 16000
+    a = max(old_off, want) + 2 - old_off                       # a stretch of the old piece that both pieces share
+    b = min(old_off + len(old_audio) / sr, want + len(new_audio) / sr) - 2 - old_off
+    if b - a < 3:
+        return round(want, 2)                                  # they barely overlap: trust the requested time
+    needle = old_audio[int(a * sr): int(min(b, a + 10) * sr)]
+    found = media.find_offset(new_audio, needle, old_off + a - want)   # where that stretch sits in the new piece
+    return round(old_off + a - found, 2)
+
+
+def _refetch_piece(job, clip):
+    """A long video's clip was moved outside the stretch saved for it: download the stretch for the new times."""
+    d = Path(job["dir"]) / "clips"
+    old = Path(clip["src"])
+    want = max(0.0, clip["start"] - PAD)
+    stem = f"{clip['id']}.src{int(time.time())}"   # a new name, so yt-dlp does not reuse the old file
+    piece = media.download_section(job["source"]["url"], d, stem, want,
+                                   min(job.get("duration") or clip["end"] + PAD, clip["end"] + PAD),
+                                   int(job["options"]["quality"]))
+
+    def sound(f):
+        wav = d / f"{f.stem}.wav"
+        media.extract_audio(f, wav)
+        try:
+            return media.load_audio(wav)
+        finally:
+            wav.unlink(missing_ok=True)
+
+    off = piece_offset(sound(old), clip["src_offset"], sound(piece), want) if old.is_file() else want
+    clip.update(src=str(piece), src_offset=off, src_end=round(off + media.probe(piece)["duration"], 2))
+    clip["start"], clip["end"] = max(clip["start"], clip["src_offset"]), min(clip["end"], clip["src_end"])
+    if old != piece:
+        old.unlink(missing_ok=True)
 
 
 BLOCK = 10 * 60         # long videos are transcribed and clipped one block at a time
