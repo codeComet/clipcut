@@ -408,6 +408,20 @@ FIX_SCHEMA = {"type": "ARRAY", "items": {"type": "STRING"}}
 KEEP_LANGS = ("en", "hi", "ur")
 
 
+# Words only English speech is full of. Our speech model does not say which language it heard, so this tells.
+# Left out: words that are common in other languages too ("a", "no", "in", "on", "me", "so", "was", "do", "to").
+_ENGLISH = frozenset("""the and you it that what this yeah oh of for with just like got going know think right okay
+ok bro it's i'm that's don't what's there can would gonna wanna how why who they my your he she we are were i have
+not but get go here all if at is out up one look wait come""".split())
+
+
+def looks_english(words: list) -> bool:
+    ws = [w for w in (re.sub(r"[^\w']", "", str(x.get("w", "")).lower().replace("\u2019", "'")) for x in words) if w]
+    if len(ws) < 8:
+        return True     # too few words to tell: keep them as they were said
+    return sum(w in _ENGLISH for w in ws) / len(ws) >= 0.15
+
+
 def needs_translation(lang: str) -> bool:
     """Is this transcript in a language whose captions should be translated into English?"""
     lang = (lang or "").lower()
@@ -451,6 +465,8 @@ def english_captions(words: list, lang: str, title: str = "", youtube_english=No
     English stays as it was said, Hindi and Urdu become Roman letters (the same words, tidied by the AI), and any
     other language is translated into English: YouTube's own English captions first, then the AI. With neither,
     the words as heard (Arabic and similar scripts still spelled in Roman letters)."""
+    if not lang and not looks_english(words) and not any(roman.needs_roman(w["w"]) for w in words):
+        lang = "?"   # our own speech model heard it (uploads, live, no YouTube transcript) and it is not English
     if not needs_translation(lang):
         return fix_caption_words(words, title, lang)
     if youtube_english:
@@ -461,7 +477,7 @@ def english_captions(words: list, lang: str, title: str = "", youtube_english=No
         if en and len(en) >= 3:
             return fix_caption_words(en, title)
     try:
-        return roman.words(translate_caption_words(words, lang, title))
+        return roman.words(translate_caption_words(words, "" if lang == "?" else lang, title))
     except Exception:  # noqa: BLE001
         return roman.words(words)
 
