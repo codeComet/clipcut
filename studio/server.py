@@ -989,6 +989,16 @@ def upload_cancel(upid: str):
     return {"ok": True}
 
 
+@app.post("/api/jobs/{jid}/stop")
+def stop_job(request: Request, jid: str):
+    job = _job_or_404(jid)
+    try:
+        jobs.stop(job["id"])
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return _job_out(request, job)
+
+
 @app.post("/api/jobs/{jid}/retry")
 def retry_job(request: Request, jid: str):
     job = _job_or_404(jid)

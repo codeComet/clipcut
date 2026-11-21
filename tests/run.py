@@ -61,6 +61,7 @@ def main() -> int:
                 ("retrying a failed video", ["tests/test_retry.py"]),
                 ("English captions when the language is not known", ["tests/test_caption_lang.py"]),
                 ("downloaded clips are named after their title", ["tests/test_download_name.py"]),
+                ("stopping a video", ["tests/test_stop.py"]),
                 ("fresh installs: ffmpeg, the speech model, AI errors", ["tests/test_tools.py"]),
                 ("the storage folder: full drive, open, move", ["tests/test_storage.py"])]
         for name, args in runs:

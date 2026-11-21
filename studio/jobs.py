@@ -178,10 +178,21 @@ def save(job):
         tmp.replace(d / "job.json")
 
 
+class Stopped(Exception):
+    pass
+
+
+def _check_stop(job):
+    if job.get("stopping"):
+        raise Stopped("Stopped by you.")
+
+
 def _set(job, **kw):
     with _lock:
         job.update(kw)
     save(job)
+    if "status" not in kw:   # progress updates come often while a video is worked on: that is where Stop takes effect
+        _check_stop(job)
 
 
 def _remap(path, folder: Path):
@@ -303,6 +314,16 @@ def create(source: dict, options: dict, enqueue=True, creator=None, kind="video"
 STOPPED = "The video stopped before this clip was made."
 
 
+def stop(jid):
+    """Stop a video that is waiting or being worked on. It stops at its next step (seconds, or a minute or two while
+    a long video's sound is being unpacked); clips already made are kept, and it can be deleted or retried after."""
+    job = _jobs[jid]
+    if job["status"] not in ("queued", "running") or job.get("kind") == "live":
+        raise ValueError("Only a video that is waiting or being worked on can be stopped.")
+    job.update(stopping=True, stage="Stopping…")
+    save(job)
+
+
 def retry(jid):
     """A video that failed (often a download YouTube refused): try again, keeping what was already finished."""
     job = _jobs[jid]
@@ -313,6 +334,7 @@ def retry(jid):
     for c in job["clips"]:
         if c.get("status") == "error" and c.get("error") == STOPPED:
             c.update(status="queued", error=None)    # made when the video picks up again
+    job.pop("stopping", None)
     job.update(status="queued", stage="Trying again", error=None, resume=True)
     enqueue(job)
 
@@ -440,6 +462,7 @@ def _wait_for_clips(job, futures, began, workers):
     left, given_up = list(futures), 0
     late = "This clip took too long and was stopped. Open it and press Save and re-make to try again."
     while left:
+        _check_stop(job)
         still = []
         for f, clip in left:
             if f.done():
@@ -702,6 +725,7 @@ def _run_job(job):
             heard[i] = ahead.submit(ctx.bind(transcribe.transcribe), audio[a_:b_], tp)
 
     for bi, (a, b) in enumerate(blocks):
+        _check_stop(job)
         if bi < done_blocks:
             continue                      # transcribed and checked by the AI before the restart
         shift = a / 16000
@@ -784,12 +808,21 @@ def _worker(quick_only=False):
         token = ctx._uid.set(job["user"])  # everything this job does runs as its owner
         try:
             if kind == "job":
+                _check_stop(job)   # stopped while it was waiting in line
                 _run_job(job)
             else:
                 words = json.loads((Path(job["dir"]) / "words.json").read_text(encoding="utf-8"))
                 clip = next(c for c in job["clips"] if c["id"] == cid)
                 render_one(job, clip, words)
         except Exception as e:  # noqa: BLE001
+            if kind == "job" and (isinstance(e, Stopped) or job.get("stopping")):   # a downloader may wrap our Stopped
+                job.pop("stopping", None)
+                for c in job["clips"]:
+                    if c.get("status") in ("queued", "rendering"):
+                        c.update(status="error", error=STOPPED)
+                _set(job, status="error", error="Stopped by you.", stage="Stopped")
+                creators.log(job["creator"], "Video stopped by you")
+                continue
             (Path(job["dir"]) / "error.log").write_text(traceback.format_exc(), encoding="utf-8")
             if kind == "job":
                 for c in job["clips"]:
