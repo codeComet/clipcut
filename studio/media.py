@@ -210,8 +210,8 @@ def _caption_words(data: dict) -> list:
         for x in segs:
             parts = x["utf8"].split()
             for n, w in enumerate(parts):
-                if re.fullmatch(r"[\[(].*[\])]", w) or w in ("[", "]", "__"):
-                    continue                      # [Music], [Applause], and words YouTube blanked out
+                if re.fullmatch(r"[\[(].*[\])]", w) or w in ("[", "]", "__", ">>", "&gt;&gt;"):
+                    continue                      # [Music], [Applause], speaker marks (>>), words YouTube blanked out
                 # a line with no word timings: its words are spread evenly over the time the line was on screen
                 at = t0 + float(x.get("tOffsetMs") or 0) if timed else t0 + dur * n / max(1, len(parts))
                 out.append({"w": w, "s": round(at / 1000, 2)})
