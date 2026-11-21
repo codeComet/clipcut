@@ -1244,10 +1244,15 @@ def delete_my_account(request: Request, body: dict = Body(...)):
 def media_file(jid: str, name: str, download: int = 0):
     if not re.fullmatch(r"[\w\-]+\.(mp4|jpg)", name):
         raise HTTPException(404)
-    f = Path(_job_or_404(jid)["dir"]) / "clips" / name
+    job = _job_or_404(jid)
+    f = Path(job["dir"]) / "clips" / name
     if not f.is_file():
         raise HTTPException(404)
-    return FileResponse(f, filename=name if download else None, headers={"Cache-Control": "private, max-age=300"})
+    filename = None
+    if download:   # saved under the clip's title, not its internal name
+        clip = next((c for c in job["clips"] if Path(str(c.get("file") or "")).name == name), None) if name.endswith(".mp4") else None
+        filename = account.clip_name(clip, f.stem) + ".mp4" if clip else name
+    return FileResponse(f, filename=filename, headers={"Cache-Control": "private, max-age=300"})
 
 
 # ================================================================ creators and live recording
