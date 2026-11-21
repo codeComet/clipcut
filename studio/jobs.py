@@ -137,6 +137,14 @@ def clean_options(options) -> dict:
     return out
 
 
+CLIP_EVERY_MIN = 8      # long videos: at least one clip per this many minutes, so there are spares to queue later
+
+
+def clips_for(span_sec: float, chosen) -> int:
+    """How many clips to make: what was asked for, or more for a long video, up to the limit."""
+    return max(int(chosen), min(LIMITS["max_clips"][1], math.ceil(span_sec / 60 / CLIP_EVERY_MIN)))
+
+
 def job_dir(jid) -> Path:
     return Path(_jobs[jid]["dir"])
 
@@ -631,6 +639,7 @@ def _run_job(job):
     lo = int((o["range_start"] or 0) * 16000)
     hi = min(len(audio), int(o["range_end"] * 16000)) if o["range_end"] else len(audio)
     span = (hi - lo) / 16000
+    o["max_clips"] = clips_for(span, o["max_clips"])
     db = media.loudness_per_second(audio[lo:hi])
 
     vlock, vstate = threading.Lock(), {}
