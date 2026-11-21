@@ -989,6 +989,26 @@ def upload_cancel(upid: str):
     return {"ok": True}
 
 
+@app.post("/api/jobs/{jid}/retry")
+def retry_job(request: Request, jid: str):
+    job = _job_or_404(jid)
+    _need_verified()
+    _quota()
+    _throttle("newjob:" + ctx.uid(), 30, 600)
+    if job["source"].get("type") == "url":
+        try:
+            media.check_youtube(job["source"]["url"])   # YouTube is still refusing us: say so instead of failing again
+        except media.YouTubeBlocked as e:
+            raise HTTPException(503, str(e))
+    try:
+        with _create_lock:
+            _job_slots()
+            jobs.retry(job["id"])
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+    return _job_out(request, job)
+
+
 @app.post("/api/jobs/{jid}/clips/{cid}/render")
 def rerender(jid: str, cid: str, body: dict = Body(...)):
     job = _job_or_404(jid)

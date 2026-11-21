@@ -300,6 +300,23 @@ def create(source: dict, options: dict, enqueue=True, creator=None, kind="video"
     return job
 
 
+STOPPED = "The video stopped before this clip was made."
+
+
+def retry(jid):
+    """A video that failed (often a download YouTube refused): try again, keeping what was already finished."""
+    job = _jobs[jid]
+    if job["status"] != "error" or job.get("kind") == "live":
+        raise ValueError("Only a video that failed can be tried again.")
+    if job["source"].get("type") == "file" and not Path(job["source"].get("path") or "").is_file():
+        raise ValueError("The uploaded file is no longer here. Upload it again.")
+    for c in job["clips"]:
+        if c.get("status") == "error" and c.get("error") == STOPPED:
+            c.update(status="queued", error=None)    # made when the video picks up again
+    job.update(status="queued", stage="Trying again", error=None, resume=True)
+    enqueue(job)
+
+
 def enqueue(job):
     save(job)
     _q.put(("job", job["id"], None), user=job["user"])
@@ -777,7 +794,7 @@ def _worker(quick_only=False):
             if kind == "job":
                 for c in job["clips"]:
                     if c.get("status") in ("queued", "rendering"):
-                        c.update(status="error", error="The video stopped before this clip was made.")
+                        c.update(status="error", error=STOPPED)
                 _set(job, status="error", error=safe.friendly(e), stage="Stopped")
                 creators.log(job["creator"], f"Video failed: {safe.friendly(e)[:200]}")
         finally:
