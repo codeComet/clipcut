@@ -377,6 +377,8 @@ def delete(jid):
         if job:
             _by_user.get(job["user"], {}).pop(jid, None)
     if job:
+        from . import posting          # it imports this module
+        posting.drop(job["user"], jid)
         ctx.bump(job["user"])
         shutil.rmtree(job["dir"], ignore_errors=True)
     return bool(job)

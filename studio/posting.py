@@ -211,6 +211,17 @@ def cancel(pid):
     _mirror(p)
 
 
+def drop(user, jid, cid=None):
+    """A video (or one of its clips) was deleted: its posts that are still waiting leave the queue."""
+    with _lock:
+        gone = [p for p in _posts if p.get("user") == user and p["job"] == jid and cid in (None, p["clip"])
+                and p["status"] in ("scheduled", "approval")]
+        for p in gone:
+            p.update(status="cancelled", error="The video or clip was deleted.")
+        if gone:
+            _save()
+
+
 def retry(pid):
     with _lock:
         p = next((p for p in _mine() if p["id"] == pid), None)

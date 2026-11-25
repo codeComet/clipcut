@@ -32,6 +32,8 @@ def delete_clip(jid: str, cid: str) -> bool:
         raise Busy("This clip is still being made. Wait for it to finish first.")
     job["clips"] = [c for c in job["clips"] if c["id"] != cid]
     jobs.save(job)
+    from . import posting
+    posting.drop(job["user"], jid, cid)
     d = Path(job["dir"])
     for name in (clip.get("file"), clip.get("cover")):
         if name:

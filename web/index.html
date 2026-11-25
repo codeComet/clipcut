@@ -1074,6 +1074,10 @@ const D = {jid:null, cid:null, sig:""};
 const creatorId = () => S.view.startsWith("c:") ? S.view.slice(2) : null;
 const creator = () => S.creators.find(c => c.id === creatorId());
 const jobOf = id => S.jobs.find(j => j.id === id);
+function waitNote(clips) {      // added to a delete question: posts of these clips that have not gone out yet
+  const n = (clips || []).flatMap(c => Object.values(c.posts || {})).filter(p => p.status === "approval" || p.status === "scheduled").length;
+  return n ? ` ${n === 1 ? "1 post waiting in the queue is" : `${n} posts waiting in the queue are`} cancelled too.` : "";
+}
 
 /* ============================================================ shell */
 function aiCard() {
@@ -2342,7 +2346,7 @@ document.addEventListener("click", async e => {
       toast("Password changed. Other devices were signed out.", "ok"); return drawSettings();
     }
     if (a === "delclip") {
-      if (!await ask("Delete this clip?", "The clip is removed for good. The video and its other clips stay.", "Delete clip", true)) return;
+      if (!await ask("Delete this clip?", "The clip is removed for good. The video and its other clips stay." + waitNote(jobOf(d.j)?.clips.filter(c => c.id === d.c)), "Delete clip", true)) return;
       await api(`/api/jobs/${d.j}/clips/${encodeURIComponent(d.c)}`, {method:"DELETE"});
       const j = jobOf(d.j); if (j) j.clips = j.clips.filter(c => c.id !== d.c);
       render(); toast("Clip deleted", "ok"); return tick();
@@ -2359,7 +2363,8 @@ document.addEventListener("click", async e => {
     if (a === "seldel") {
       const {jobsSel, clipsSel} = selParts();
       const what = [jobsSel.length ? (jobsSel.length === 1 ? "1 video with all its clips" : `${jobsSel.length} videos with all their clips`) : "", clipsSel.length ? `${clipsSel.length} clip${clipsSel.length === 1 ? "" : "s"}` : ""].filter(Boolean).join(" and ");
-      if (!await ask("Delete what you selected?", `This removes ${what} for good. It cannot be undone.`, "Delete", true)) return;
+      const gone = S.jobs.flatMap(j => jobsSel.includes(j.id) ? j.clips : j.clips.filter(c => clipsSel.some(([x, y]) => x === j.id && y === c.id)));
+      if (!await ask("Delete what you selected?", `This removes ${what} for good. It cannot be undone.` + waitNote(gone), "Delete", true)) return;
       const r = await send("/api/bulk/delete", {videos: jobsSel, clips: clipsSel});
       sel().clear(); await tick(); render();
       return toast(`Deleted ${r.videos} video${r.videos === 1 ? "" : "s"} and ${r.clips} clip${r.clips === 1 ? "" : "s"}` + (r.skipped ? `. ${r.skipped} still being made were left alone.` : ""), "ok");
@@ -2367,7 +2372,7 @@ document.addEventListener("click", async e => {
     if (a === "delcreator") {
       const c = creator(); if (!c) return;
       const n = S.jobs.filter(j => j.creator === c.id).length;
-      if (!await askTyped(`Delete ${c.name}?`, `This removes the creator, their settings${n ? `, and their ${n} video${n === 1 ? "" : "s"} with all the clips` : ""} for good. It cannot be undone.`, c.name, "Delete creator")) return;
+      if (!await askTyped(`Delete ${c.name}?`, `This removes the creator, their settings${n ? `, and their ${n} video${n === 1 ? "" : "s"} with all the clips` : ""} for good. It cannot be undone.` + waitNote(S.jobs.filter(j => j.creator === c.id).flatMap(j => j.clips)), c.name, "Delete creator")) return;
       await api(`/api/creators/${encodeURIComponent(c.id)}`, {method:"DELETE"});
       S.creators = S.creators.filter(x => x.id !== c.id); S.jobs = S.jobs.filter(j => j.creator !== c.id);
       go("overview"); toast("Creator deleted", "ok"); return tick();
@@ -2380,7 +2385,7 @@ document.addEventListener("click", async e => {
       location.href = "/"; return;
     }
     if (a === "deljob") {
-      if (!await ask("Delete this video?", "The video and all of its clips are permanently deleted. This cannot be undone.", "Delete", true)) return;
+      if (!await ask("Delete this video?", "The video and all of its clips are permanently deleted. This cannot be undone." + waitNote(jobOf(d.j)?.clips), "Delete", true)) return;
       await api(`/api/jobs/${d.j}`, {method:"DELETE"}); toast("Deleted"); return tick();
     }
     if (a === "chadd") {

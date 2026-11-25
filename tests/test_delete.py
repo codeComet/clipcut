@@ -1,11 +1,11 @@
 """Deleting clips, videos, creators and accounts, bulk actions and the zip download. Runs against the code directly,
 with its own empty data folder: nothing outside it is touched."""
-import os, sys, tempfile, zipfile
+import json, os, sys, tempfile, zipfile
 os.environ["CLIPCUT_DATA"] = tempfile.mkdtemp(prefix="pc-del-"); os.environ["DATABASE_URL"] = ""
 sys.path.insert(0, ".")
 from pathlib import Path
 import sqlalchemy as sa
-from studio import account, auth, config, creators, ctx, db, jobs
+from studio import account, auth, config, creators, ctx, db, jobs, posting
 db.init()
 fails = []
 def check(n, ok, x=""):
@@ -26,6 +26,20 @@ with ctx.as_user(a.id):
     z = account.zip_clips([(j1["id"], "clip02"), (j1["id"], "clip03"), (j2["id"], "clip01"), ("nope", "x")])
     names = zipfile.ZipFile(z).namelist()
     check("several clips download as one zip with distinct names", len(names) == 3 and len(set(names)) == 3, str(names))
+    def post(j, cid, status, user=a.id):
+        p = {"id": f"p{len(posting._posts)}", "user": user, "job": j["id"], "clip": cid, "status": status, "error": None}
+        posting._posts.append(p); return p
+    jp = video()
+    one, two, sent, other = post(jp, "clip01", "approval"), post(jp, "clip02", "scheduled"), post(jp, "clip02", "posted"), post(j2, "clip03", "approval")
+    theirs = post(jp, "clip02", "approval", b.id)
+    account.delete_clip(jp["id"], "clip01")
+    check("deleting a clip takes only its own posts out of the queue", [one["status"], two["status"]] == ["cancelled", "scheduled"], str([one, two]))
+    jobs.delete(jp["id"])
+    check("deleting a video takes its waiting posts out of the queue", two["status"] == "cancelled" and two["error"])
+    check("what is already posted, other videos and other people are left alone", [sent["status"], other["status"], theirs["status"]] == ["posted", "approval", "approval"])
+    check("and that is saved", [p["status"] for p in json.loads(posting._FILE.read_text())][:2] == ["cancelled", "cancelled"])
+    jb = video(); bulk = post(jb, "clip01", "scheduled"); account.delete_many([jb["id"]], [])
+    check("bulk delete does too", bulk["status"] == "cancelled")
     r = account.delete_many([j1["id"], j3["id"]], [(j2["id"], "clip01"), (j1["id"], "clip02")])
     check("bulk delete removes videos and clips, leaves work in progress alone", r == {"videos": 1, "clips": 1, "skipped": 1}, str(r))
     check("the deleted video's folder is gone", not Path(j1["dir"]).exists())
