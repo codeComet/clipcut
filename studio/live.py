@@ -693,35 +693,56 @@ def check_now(cid):
     threading.Thread(target=run, daemon=True).start()
 
 
+_skips: dict = {}        # (user, creator) -> (message, when): the log says why a stream was not recorded, not every two minutes
+
+
+def _skip(c, why: str):
+    key, now = (ctx.uid(), c["id"]), time.time()
+    last, at = _skips.get(key, ("", 0))
+    if why != last or now - at > 3600:
+        _skips[key] = (why, now)
+        creators.log(c["id"], why)
+
+
 def _watch_one(c):
     """Start recording this auto-record creator if they are live on any of their channels."""
     from . import profiles
     try:
-        if active_for(c["id"]) or len(active_mine()) >= config.MAX_LIVE_PER_USER or len(active()) >= config.MAX_LIVE_TOTAL or (active() and load.busy()):
+        if active_for(c["id"]):
             return
+        full = len(active_mine()) >= config.MAX_LIVE_PER_USER or len(active()) >= config.MAX_LIVE_TOTAL or (active() and load.busy())
         # the chosen channel first, then their other platforms
         urls = [c["channel"]] + [u for u in c.get("channels", {}).values() if u != c["channel"]]
         for url in urls:
             # one shared "are they live?" answer per channel, however many people follow it
+            where = creators.platform_key(url).title()
             if not profiles.live_shared(profiles.platform_of(url), url).get("live"):
+                err = profiles._live_err.get(url.rstrip("/").lower())
+                if err:
+                    _skip(c, f"Couldn't check whether they are live on {where}: {err}")
+                continue
+            if full:
+                _skip(c, f"Live on {where}, not recorded: the server is busy or already recording as many streams as it can")
                 continue
             if media.is_youtube(url):
                 # check YouTube will hand over the stream before making a recording that could only fail
                 if media.youtube_paused():
+                    _skip(c, f"Live on {where}, not recorded: YouTube is refusing this server, trying again in a few minutes")
                     continue
                 try:
                     resolve(normalize(url))
-                except NotLive:
+                except NotLive as e:
+                    if not profiles.NOT_LIVE.search(str(e)):          # really ended since the check: nothing to report
+                        _skip(c, f"Live on {where}, not recorded: {media_safe(e)}")
                     continue
             start_session(c, url)
-            where = creators.platform_key(url).title()
             creators.log(c["id"], f"Went live on {where}: recording started automatically")
             alerts.notify(f"{c['name']} went live on {where}, recording started.")
             break
     except NotLive:
         pass
     except Exception as e:  # noqa: BLE001
-        creators.log(c["id"], f"Auto-record check failed: {str(e)[-150:]}")
+        _skip(c, f"Auto-record check failed: {str(e)[-150:]}")
 
 
 def watch_loop():

@@ -62,6 +62,7 @@ def main() -> int:
                 ("English captions when the language is not known", ["tests/test_caption_lang.py"]),
                 ("downloaded clips are named after their title", ["tests/test_download_name.py"]),
                 ("stopping a video", ["tests/test_stop.py"]),
+                ("the live check and skipped recordings", ["tests/test_live_check.py"]),
                 ("more clips from long videos", ["tests/test_clip_count.py"]),
                 ("fresh installs: ffmpeg, the speech model, AI errors", ["tests/test_tools.py"]),
                 ("the storage folder: full drive, open, move", ["tests/test_storage.py"])]

@@ -11,7 +11,7 @@ import time
 import urllib.request
 from urllib.parse import urlparse
 
-from . import config, creators, ctx
+from . import config, creators, ctx, safe
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
       "Accept-Language": "en-US,en;q=0.9"}
@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 _pool = ThreadPoolExecutor(max_workers=16, thread_name_prefix="profiles")   # lookups never pile up as thousands of threads
 _live: dict = {}          # channel link -> (when, result): everyone watching the same channel shares one check
 _live_locks: dict = {}
+_live_err: dict = {}      # channel link -> why its last live check failed (absent when it worked)
 LIVE_SHARED_FOR = 75      # seconds a live check is reused for every user
 
 _cache: dict = {}
@@ -200,6 +201,10 @@ def _no_date(title: str) -> str:
     return re.sub(r"\s*\(live\)\s*\d{4}-\d{2}-\d{2} \d{2}:\d{2}$|\s+\d{4}-\d{2}-\d{2} \d{2}:\d{2}$", "", title or "").strip()
 
 
+# yt-dlp's ways of saying "reachable, just not streaming now"; anything else is a check that failed
+NOT_LIVE = re.compile(r"not currently live|not live right now|live event (will begin|has ended)|premieres? in", re.I)
+
+
 def live_now(platform: str, url: str) -> dict:
     """{live, viewers, title, started (unix time), embed}. `embed` is what the platform's own player needs:
     the Twitch login, the YouTube video id or the Kick channel name."""
@@ -221,19 +226,21 @@ def live_now(platform: str, url: str) -> dict:
         return {"live": True, "viewers": ls.get("viewer_count"), "title": ls.get("session_title") or "", "started": started, "embed": slug}
     if platform == "YouTube":
         base = re.sub(r"/(live|videos|streams|featured)$", "", url)
-        _, raw = _get(base + "/live")
-        html = raw.decode("utf-8", "replace")
-        if '"isLiveNow":true' not in html:
-            return off
-        vid = (re.search(r'<link rel="canonical" href="https://www\.youtube\.com/watch\?v=([\w-]{11})"', html) or [None, ""])[1]
-        out = {"live": True, "viewers": None, "title": _meta(html, "og:title"), "started": None, "embed": vid}
-        try:
+        try:                                     # yt-dlp uses the saved cookies and proxy
             i = _ydl_info(base + "/live")
-            out.update(viewers=i.get("concurrent_view_count"), title=_no_date(i.get("title")) or out["title"],
-                       started=i.get("release_timestamp") or i.get("timestamp"), embed=i.get("id") or vid)
-        except Exception:
-            pass
-        return out
+        except Exception as e:
+            if NOT_LIVE.search(str(e)):
+                return off
+            _, raw = _get(base + "/live")        # YouTube refused that: the plain page may still say
+            html = raw.decode("utf-8", "replace")
+            if '"isLiveNow":true' not in html:
+                raise                            # a consent or "not a bot" page looks the same as offline, so don't guess
+            vid = (re.search(r'<link rel="canonical" href="https://www\.youtube\.com/watch\?v=([\w-]{11})"', html) or [None, ""])[1]
+            return {"live": True, "viewers": None, "title": _meta(html, "og:title"), "started": None, "embed": vid}
+        if not i.get("is_live"):
+            return off
+        return {"live": True, "viewers": i.get("concurrent_view_count"), "title": _no_date(i.get("title")),
+                "started": i.get("release_timestamp") or i.get("timestamp"), "embed": i.get("id") or ""}
     if platform == "Twitch":
         login = (path[0] if path else "").lower()
         if re.fullmatch(r"\w{2,40}", login):
@@ -270,17 +277,20 @@ def live_shared(platform: str, url: str) -> dict:
             return dict(got[1])
         try:
             out = live_now(platform, url)
-        except Exception:
+        except Exception as e:
+            _live_err[key] = safe.friendly(e, 200)
             # the platform hiccuped, or the channel does not exist: keep the last answer (or "offline") for a
             # short while, so one bad channel is not asked about again for every person who follows it
             out = got[1] if got else {"live": False, "viewers": None, "title": "", "started": None, "embed": ""}
             _live[key] = (time.time() - LIVE_SHARED_FOR + 45, out)
             return dict(out)
         _live[key] = (time.time(), out)
+        _live_err.pop(key, None)
         if len(_live) > 5000:
             for k in [k for k, v in list(_live.items()) if time.time() - v[0] > 600]:
                 _live.pop(k, None)
                 _live_locks.pop(k, None)
+                _live_err.pop(k, None)
         return dict(out)
 
 
